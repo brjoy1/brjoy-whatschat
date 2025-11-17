@@ -42,7 +42,16 @@ class EvolutionClient:
                 "apikey": self.api_key,
                 "Content-Type": "application/json"
             },
-            timeout=30.0
+            timeout=httpx.Timeout(
+                connect=10.0,  # Conexão
+                read=20.0,     # Leitura
+                write=20.0,    # Escrita
+                pool=5.0       # Pool de conexões
+            ),
+            limits=httpx.Limits(
+                max_keepalive_connections=5,
+                max_connections=10
+            )
         )
 
     @retry(
@@ -304,22 +313,28 @@ class EvolutionClient:
         logger.debug("✅ Cliente Evolution API fechado")
 
 
-# Singleton para dependency injection
+# Singleton para dependency injection (thread-safe)
+import threading
+
 _evolution_client: Optional[EvolutionClient] = None
+_client_lock = threading.Lock()
 
 
 async def get_evolution_client() -> EvolutionClient:
     """
     Dependency injection para FastAPI.
-    Cria instância única e valida conexão.
+    Cria instância única e valida conexão (thread-safe).
 
     Returns:
         EvolutionClient: Cliente configurado
     """
     global _evolution_client
 
+    # Double-checked locking pattern
     if _evolution_client is None:
-        _evolution_client = EvolutionClient()
-        await _evolution_client.check_health()
+        with _client_lock:
+            if _evolution_client is None:
+                _evolution_client = EvolutionClient()
+                await _evolution_client.check_health()
 
     return _evolution_client

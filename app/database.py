@@ -17,7 +17,15 @@ engine = create_engine(
     pool_pre_ping=True,  # Verifica conexão antes de usar
     pool_size=10,
     max_overflow=20,
-    echo=settings.DEBUG  # SQL logging em modo debug
+    pool_recycle=3600,  # Recicla conexões após 1 hora
+    echo=settings.DEBUG,  # SQL logging em modo debug
+    connect_args={
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    } if "postgresql" in settings.DATABASE_URL else {}
 )
 
 # Session factory

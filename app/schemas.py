@@ -54,7 +54,7 @@ class LeadImobiliaria(BaseModel):
     timeline: Optional[Timeline] = Field(None, description="Urgência da compra/aluguel")
     observacoes: Optional[str] = Field(None, description="Informações adicionais")
 
-    @field_validator('telefone')
+    @field_validator('telefone', mode='before')
     @classmethod
     def validar_telefone_brasileiro(cls, v):
         """Valida formato de telefone brasileiro (10 ou 11 dígitos)"""
@@ -64,7 +64,7 @@ class LeadImobiliaria(BaseModel):
                 raise ValueError('Telefone deve ter 10 ou 11 dígitos (com DDD)')
         return v
 
-    @field_validator('orcamento_max')
+    @field_validator('orcamento_max', mode='after')
     @classmethod
     def orcamento_max_maior_que_min(cls, v, info):
         """Valida que orçamento máximo é maior que mínimo"""

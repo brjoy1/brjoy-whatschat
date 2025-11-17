@@ -13,10 +13,40 @@ from app.core.security import encryption_manager
 from datetime import datetime, timedelta
 import logging
 import json
+import hmac
+import hashlib
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def verify_webhook_signature(body: bytes, signature: str, secret: str) -> bool:
+    """
+    Verifica assinatura HMAC do webhook para segurança.
+
+    Args:
+        body: Corpo da requisição (bytes)
+        signature: Assinatura fornecida no header
+        secret: Chave secreta (API key)
+
+    Returns:
+        bool: True se assinatura válida
+    """
+    if not signature:
+        return False
+
+    try:
+        expected = hmac.new(
+            secret.encode(),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+
+        return hmac.compare_digest(signature, expected)
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar signature: {e}")
+        return False
 
 
 async def process_incoming_message(
@@ -122,9 +152,26 @@ async def process_incoming_message(
         observacoes=lead.observacoes
     )
 
-    # Executar extração de slots
+    # Executar extração de slots com tratamento de erro
     logger.info(f"🧠 Extraindo slots para lead {lead.id}")
-    updated_slots = await slot_extractor.extract_from_messages(messages_text, current_slots)
+    try:
+        updated_slots = await slot_extractor.extract_from_messages(messages_text, current_slots)
+    except Exception as e:
+        logger.error(f"❌ Falha ao extrair slots do lead {lead.id}: {e}", exc_info=True)
+
+        # Enviar mensagem de erro amigável ao usuário
+        try:
+            from app.services.response_generator import get_response_generator
+            from app.tasks.message_tasks import send_message_with_humanization
+
+            response_gen = get_response_generator()
+            error_msg = response_gen.generate_error_response("generic")
+
+            send_message_with_humanization.delay(session_name, phone, error_msg)
+        except Exception as send_error:
+            logger.error(f"❌ Erro ao enviar mensagem de erro: {send_error}")
+
+        return  # Interromper processamento
 
     # Atualizar lead com novos slots
     lead.nome = updated_slots.nome
@@ -169,9 +216,14 @@ async def process_incoming_message(
         db.add(assistant_message)
         db.commit()
 
-        # Enfileirar envio via Celery com typing simulation
-        from app.tasks.message_tasks import send_message_with_humanization
-        send_message_with_humanization.delay(session_name, phone, next_question)
+        # Enfileirar envio via Celery (import local para evitar circular)
+        try:
+            from app.tasks.message_tasks import send_message_with_humanization
+            send_message_with_humanization.delay(session_name, phone, next_question)
+        except Exception as e:
+            logger.error(f"❌ Erro ao enfileirar mensagem: {e}")
+            # Continuar processamento mesmo se Celery falhar
+            pass
 
     else:
         # Lead completamente qualificado
@@ -194,8 +246,13 @@ async def process_incoming_message(
         db.add(assistant_message)
         db.commit()
 
-        # Enviar via Celery
-        send_message_with_humanization.delay(session_name, phone, final_message)
+        # Enviar via Celery (import já feito acima)
+        try:
+            from app.tasks.message_tasks import send_message_with_humanization
+            send_message_with_humanization.delay(session_name, phone, final_message)
+        except Exception as e:
+            logger.error(f"❌ Erro ao enfileirar mensagem final: {e}")
+            pass
 
 
 @router.post("/webhook")
