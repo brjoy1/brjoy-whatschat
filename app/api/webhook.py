@@ -169,9 +169,9 @@ async def process_incoming_message(
         db.add(assistant_message)
         db.commit()
 
-        # TODO FASE 4: Enfileirar envio via Celery com typing simulation
-        # from app.tasks.message_tasks import send_message_with_humanization
-        # send_message_with_humanization.delay(session_name, phone, next_question)
+        # Enfileirar envio via Celery com typing simulation
+        from app.tasks.message_tasks import send_message_with_humanization
+        send_message_with_humanization.delay(session_name, phone, next_question)
 
     else:
         # Lead completamente qualificado
@@ -194,8 +194,8 @@ async def process_incoming_message(
         db.add(assistant_message)
         db.commit()
 
-        # TODO FASE 4: Enviar via Celery
-        # send_message_with_humanization.delay(session_name, phone, final_message)
+        # Enviar via Celery
+        send_message_with_humanization.delay(session_name, phone, final_message)
 
 
 @router.post("/webhook")
